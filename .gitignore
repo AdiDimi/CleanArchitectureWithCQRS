@@ -1,0 +1,95 @@
+# Build results
+bin/
+obj/
+
+# Visual Studio user-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+.vs/
+
+# Rider/JetBrains
+.idea/
+*.iml
+
+# Dotnet artifacts
+*.dll
+*.exe
+*.pdb
+*.mdb
+*.cache
+*.log
+
+# NuGet
+*.nupkg
+# Packages folder (if used)
+packages/
+
+# Logs
+Logs/
+*.log
+*.json.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bk
+*.bak
+~$*
+
+# Publish output
+publish/
+artifacts/
+
+# Test results
+TestResults/
+*.trx
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+# User secrets & config (do not ignore appsettings*.json if you commit them)
+secrets.json
+
+# Local tools
+.localtoolsettings.json
+
+# Resharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# StyleCop
+StyleCop.Cache
+
+# Docker
+**/docker-compose.override.yml
+**/.dockerignore
+
+# Node (if any frontend assets)
+node_modules/
+
+# Images and uploads (keep folders, ignore contents except .gitkeep)
+wwwroot/uploads/**/*
+!wwwroot/uploads/.gitkeep
+!wwwroot/uploads/large/.gitkeep
+!wwwroot/uploads/thumbs/.gitkeep
+
+# Key Vault local cache
+*.keyvault.cache
+
+# Azure Functions local
+local.settings.json
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Rider solution cache
+/.idea/.idea.*
+
+# editorconfig logs (if any)
+.editorconfig.cache
