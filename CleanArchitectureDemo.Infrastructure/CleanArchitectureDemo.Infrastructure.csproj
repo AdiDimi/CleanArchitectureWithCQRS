@@ -10,7 +10,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" Version="23.4.0" />
   </ItemGroup>
 
   <PropertyGroup>
