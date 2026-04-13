@@ -3,5 +3,5 @@ using MediatR;
 
 namespace CleanArchitectureDemo.Application.Commands.UpdateUser
 {
-    public record UpdateUserCommand(Guid Id, string Email) : IRequest<Unit>, ITransactionalCommand;
+    public record UpdateUserCommand(string Id, string Email) : IRequest<Unit>, ITransactionalCommand;
 }

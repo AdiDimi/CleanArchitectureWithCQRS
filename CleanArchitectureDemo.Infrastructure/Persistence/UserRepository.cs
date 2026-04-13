@@ -13,14 +13,14 @@ using System.Threading.Tasks;
 
 namespace CleanArchitectureDemo.Infrastructure.Persistence
 {
-    public class UserRepository : BaseRepository, IUserRepository
+    public class UserRepository : OracleRepositoryBase, IUserRepository
     {
         public UserRepository(IDbConnectionFactory connectionFactory, ILogger<UserRepository> logger)
             : base(connectionFactory, logger)
         {
         }
 
-        public async Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task<User?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
         {
             return await QueryStoredProcedureFirstOrDefaultAsync<User>(
                 OracleProcedures.GetUserById,
@@ -38,22 +38,23 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
 
         public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default)
         {
-            return await QueryStoredProcedureAsync<User>(
+            return await ExecuteOracleFunctionWithCursorAsync<User>(
                 OracleProcedures.GetAllUsers,
-                cancellationToken: cancellationToken);
+                parameters: null,
+                cancellationToken);
         }
 
-        public async Task<IReadOnlyList<User>> GetPagedAsync(int pageNumber, int pageSize, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<User>> GetPagedAsync(int pageNumber=0, int pageSize=10, CancellationToken cancellationToken = default)
         {
             var offset = (pageNumber - 1) * pageSize;
 
-            return await QueryStoredProcedureAsync<User>(
+            return await ExecuteOracleFunctionWithCursorAsync<User>(
                 OracleProcedures.GetPagedUsers,
                 UserParameters.GetPagedUsers(offset, pageSize),
                 cancellationToken);
         }
 
-        public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default)
         {
             var count = await ExecuteOracleFunctionAsync<int>(
                 OracleProcedures.UserExists,
@@ -80,37 +81,42 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
                 cancellationToken: cancellationToken);
         }
 
-        public void Add(User user)
+        public async Task<int> Add(User user)
         {
             Logger.LogInformation("Adding user with ID: {UserId}, Email: {Email}", user.Id, user.Email);
 
-            ExecuteStoredProcedure(
+            var result =  await ExecuteStoredProcedureAsync(
                 OracleProcedures.InsertUser,
                 UserParameters.InsertUser(user.Id, user.Email));
 
             Logger.LogInformation("Successfully added user with ID: {UserId}", user.Id);
+            return result;
         }
 
-        public void Update(User user)
+        public async Task<int> Update(User user)
         {
             Logger.LogInformation("Updating user with ID: {UserId}, Email: {Email}", user.Id, user.Email);
 
-            ExecuteStoredProcedure(
+            var result = await ExecuteStoredProcedureAsync(
                 OracleProcedures.UpdateUser,
                 UserParameters.UpdateUser(user.Id, user.Email));
 
             Logger.LogInformation("Successfully updated user with ID: {UserId}", user.Id);
+
+            return result;
         }
 
-        public void Delete(User user)
+        public async Task<int> Delete(User user)
         {
             Logger.LogInformation("Deleting user with ID: {UserId}", user.Id);
 
-            ExecuteStoredProcedure(
+            var result = await ExecuteStoredProcedureAsync(
                 OracleProcedures.DeleteUser,
                 UserParameters.DeleteUser(user.Id));
 
             Logger.LogInformation("Successfully deleted user with ID: {UserId}", user.Id);
+
+            return result;
         }
     }
 }

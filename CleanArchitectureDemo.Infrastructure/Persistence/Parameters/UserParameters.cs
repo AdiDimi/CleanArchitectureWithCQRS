@@ -10,62 +10,39 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Parameters
     /// </summary>
     public static class UserParameters
     {
-        public static DynamicParameters GetUserById(Guid id)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", id.ToString());
-            return parameters;
-        }
+        public static DynamicParameters GetUserById(string id) =>
+            Create(("p_id", id));
 
-        public static DynamicParameters GetUserByEmail(string email)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_email", email);
-            return parameters;
-        }
+        public static DynamicParameters GetUserByEmail(string email) =>
+            Create(("p_email", email));
 
-        public static DynamicParameters GetPagedUsers(int offset, int pageSize)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_offset", offset);
-            parameters.Add("p_page_size", pageSize);
-            return parameters;
-        }
+        public static DynamicParameters GetPagedUsers(int offset, int pageSize) =>
+            Create(("p_offset", offset), ("p_page_size", pageSize));
 
-        public static DynamicParameters InsertUser(string id, string email)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", id);
-            parameters.Add("p_email", email);
-            return parameters;
-        }
+        public static DynamicParameters InsertUser(string id, string email) =>
+            Create(("p_id", id), ("p_email", email));
 
-        public static DynamicParameters UpdateUser(string id, string email)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", id);
-            parameters.Add("p_email", email);
-            return parameters;
-        }
+        public static DynamicParameters UpdateUser(string id, string email) =>
+            Create(("p_id", id), ("p_email", email));
 
-        public static DynamicParameters DeleteUser(string id)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", id);
-            return parameters;
-        }
+        public static DynamicParameters DeleteUser(string id) =>
+            Create(("p_id", id));
 
-        public static DynamicParameters UserExists(Guid id)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", id.ToString());
-            return parameters;
-        }
+        public static DynamicParameters UserExists(string id) =>
+            Create(("p_id", id));
 
-        public static DynamicParameters EmailExists(string email)
+        public static DynamicParameters EmailExists(string email) =>
+            Create(("p_email", email));
+
+        private static DynamicParameters Create(params (string Name, object? Value)[] values)
         {
             var parameters = new DynamicParameters();
-            parameters.Add("p_email", email);
+
+            foreach (var (name, value) in values)
+            {
+                parameters.Add(name, value);
+            }
+
             return parameters;
         }
     }

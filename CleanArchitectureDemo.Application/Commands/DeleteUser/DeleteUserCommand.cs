@@ -4,5 +4,5 @@ using System;
 
 namespace CleanArchitectureDemo.Application.Commands.DeleteUser
 {
-    public record DeleteUserCommand(Guid Id) : IRequest<Unit>, ITransactionalCommand;
+    public record DeleteUserCommand(string Id) : IRequest<Unit>, ITransactionalCommand;
 }

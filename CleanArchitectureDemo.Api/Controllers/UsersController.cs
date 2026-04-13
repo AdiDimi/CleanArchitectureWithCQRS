@@ -29,7 +29,7 @@ namespace CleanArchitectureDemo.Api.Controllers
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> Get(Guid id, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> Get(string id, CancellationToken cancellationToken = default)
         {
             var user = await _mediator.Send(new GetUserByIdQuery(id), cancellationToken);
             return Ok(user);
@@ -50,7 +50,7 @@ namespace CleanArchitectureDemo.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
-        public async Task<IActionResult> Update(Guid id, Application.Commands.UpdateUser.UpdateUserCommand cmd, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> Update(string id, Application.Commands.UpdateUser.UpdateUserCommand cmd, CancellationToken cancellationToken = default)
         {
             if (id != cmd.Id)
             {
@@ -64,7 +64,7 @@ namespace CleanArchitectureDemo.Api.Controllers
         [HttpDelete("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken = default)
         {
             await _mediator.Send(new Application.Commands.DeleteUser.DeleteUserCommand(id), cancellationToken);
             return NoContent();
