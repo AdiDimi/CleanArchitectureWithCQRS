@@ -1,81 +1,164 @@
 using CleanArchitectureDemo.Application.Interfaces;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Data;
+using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace CleanArchitectureDemo.Infrastructure.Persistence
 {
-    public class UnitOfWork : IUnitOfWork
+    public sealed class UnitOfWork : IUnitOfWork
     {
         private readonly IDbConnectionFactory _connectionFactory;
-        private IDbConnection? _connection;
-        private IDbTransaction? _transaction;
-        private readonly UserRepository _userRepository;
+        private readonly IDbSessionAccessor _dbSessionAccessor;
+        private readonly ILogger<UnitOfWork> _logger;
+    
+        private DbConnection? _connection;
+        private DbTransaction? _transaction;
+        private bool _disposed;
 
-        public UnitOfWork(IDbConnectionFactory connectionFactory, UserRepository userRepository)
+        public UnitOfWork(
+            IDbConnectionFactory connectionFactory,
+            IDbSessionAccessor dbSessionAccessor,
+            //IUserRepository userRepository,
+            ILogger<UnitOfWork> logger)
         {
-            _connectionFactory = connectionFactory;
-            _userRepository = userRepository;
+            _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+            _dbSessionAccessor = dbSessionAccessor ?? throw new ArgumentNullException(nameof(dbSessionAccessor));
+            //_userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
+        public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
-            _connection = _connectionFactory.CreateConnection();
-            _connection.Open();
-            _transaction = _connection.BeginTransaction();
+            ThrowIfDisposed();
 
-            // Set transaction on repositories
-            _userRepository.SetTransaction(_connection, _transaction);
+            if (_transaction is not null)
+            {
+                throw new InvalidOperationException("A transaction is already active.");
+            }
 
-            return Task.CompletedTask;
-        }
+            var connection = _connectionFactory.CreateConnection();
 
-        public Task CommitTransactionAsync(CancellationToken cancellationToken = default)
-        {
+            if (connection is not DbConnection dbConnection)
+            {
+                connection.Dispose();
+                throw new InvalidOperationException(
+                    $"Connection must inherit from {nameof(DbConnection)} to support async operations.");
+            }
+
             try
             {
-                _transaction?.Commit();
+                await dbConnection.OpenAsync(cancellationToken);
+
+                var transaction = await dbConnection.BeginTransactionAsync(cancellationToken);
+
+                if (transaction is not DbTransaction dbTransaction)
+                {
+                    await dbConnection.DisposeAsync();
+                    throw new InvalidOperationException("The created transaction is not a DbTransaction.");
+                }
+
+                _connection = dbConnection;
+                _transaction = dbTransaction;
+
+                _dbSessionAccessor.SetSession(_connection, _transaction);
+
+                _logger.LogInformation("Database transaction started.");
             }
             catch
             {
-                _transaction?.Rollback();
+                await dbConnection.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            if (_transaction is null)
+            {
+                throw new InvalidOperationException("No active transaction to commit.");
+            }
+
+            try
+            {
+                await _transaction.CommitAsync(cancellationToken);
+                _logger.LogInformation("Database transaction committed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error committing database transaction.");
                 throw;
             }
             finally
             {
-                _transaction?.Dispose();
-                _transaction = null;
-                _connection?.Close();
-                _connection?.Dispose();
-                _connection = null;
+                await CleanupAsync();
             }
-
-            return Task.CompletedTask;
         }
 
-        public Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+        public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
         {
+            ThrowIfDisposed();
+
+            if (_transaction is null)
+            {
+                return;
+            }
+
             try
             {
-                _transaction?.Rollback();
+                await _transaction.RollbackAsync(cancellationToken);
+                _logger.LogWarning("Database transaction rolled back.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error rolling back database transaction.");
+                throw;
             }
             finally
             {
-                _transaction?.Dispose();
-                _transaction = null;
-                _connection?.Close();
-                _connection?.Dispose();
-                _connection = null;
+                await CleanupAsync();
             }
-
-            return Task.CompletedTask;
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
-            _transaction?.Dispose();
-            _connection?.Dispose();
+            if (_disposed)
+            {
+                return;
+            }
+
+            await CleanupAsync();
+            _disposed = true;
+            GC.SuppressFinalize(this);
+        }
+
+        private async Task CleanupAsync()
+        {
+            _dbSessionAccessor.ClearSession();
+
+            if (_transaction is not null)
+            {
+                await _transaction.DisposeAsync();
+                _transaction = null;
+            }
+
+            if (_connection is not null)
+            {
+                await _connection.DisposeAsync();
+                _connection = null;
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(UnitOfWork));
+            }
         }
     }
 }

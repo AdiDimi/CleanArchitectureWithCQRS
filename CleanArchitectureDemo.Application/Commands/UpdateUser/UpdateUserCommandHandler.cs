@@ -36,7 +36,7 @@ namespace CleanArchitectureDemo.Application.Commands.UpdateUser
             // Note: You would need to add an Update method to the User entity
             // For now, this demonstrates the repository pattern
             // In a real scenario, User entity should have domain methods to update its properties
-            _userRepository.Update(user);
+            await _userRepository.UpdateAsync(user, cancellationToken);
 
             return Unit.Value;
         }

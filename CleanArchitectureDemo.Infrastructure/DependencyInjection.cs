@@ -18,12 +18,15 @@ namespace CleanArchitectureDemo.Infrastructure
             services.AddSingleton<IDbConnectionFactory>(sp => 
                 new OracleConnectionFactory(connectionString));
 
+            // DbSession Accessor
+            services.AddScoped<IDbSessionAccessor, DbSessionAccessor>();
             // Unit of Work
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 
             // Repositories
-            services.AddScoped<UserRepository>(); // Concrete for UnitOfWork injection
-            services.AddScoped<IUserRepository>(sp => sp.GetRequiredService<UserRepository>());
+            services.AddScoped<IUserRepository, UserRepository>(); // Concrete for UnitOfWork injection
+            //services.AddScoped<IUserRepository>(sp => sp.GetRequiredService<UserRepository>());
+            //services.AddSingleton<IDbConnectionFactory, OracleConnectionFactory>();
 
             return services;
         }

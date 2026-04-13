@@ -6,32 +6,38 @@ using Oracle.ManagedDataAccess.Types;
 using System.Data;
 using System.Data.Common;
 
+
 public abstract class OracleRepositoryBase
 {
     protected readonly IDbConnectionFactory ConnectionFactory;
+    protected readonly IDbSessionAccessor DbSessionAccessor;
     protected readonly ILogger Logger;
-
-    protected IDbConnection? Connection;
-    protected IDbTransaction? Transaction;
 
     protected OracleRepositoryBase(
         IDbConnectionFactory connectionFactory,
+        IDbSessionAccessor dbSessionAccessor,
         ILogger logger)
     {
         ConnectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        DbSessionAccessor = dbSessionAccessor ?? throw new ArgumentNullException(nameof(dbSessionAccessor));
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public virtual void SetTransaction(IDbConnection connection, IDbTransaction transaction)
-    {
-        Connection = connection ?? throw new ArgumentNullException(nameof(connection));
-        Transaction = transaction ?? throw new ArgumentNullException(nameof(transaction));
-    }
-
-    protected bool HasExternalTransaction => Connection is not null;
+    protected bool HasSharedSession => DbSessionAccessor.HasActiveTransaction;
 
     protected IDbConnection GetConnection()
-        => Connection ?? ConnectionFactory.CreateConnection();
+        => DbSessionAccessor.Connection ?? ConnectionFactory.CreateConnection();
+
+    protected IDbTransaction? GetTransaction()
+        => DbSessionAccessor.Transaction;
+
+    protected void DisposeOwnedConnection(IDbConnection connection)
+    {
+        if (!HasSharedSession)
+        {
+            connection.Dispose();
+        }
+    }
 
     protected async Task<DbConnection> GetOpenDbConnectionAsync(CancellationToken cancellationToken)
     {
@@ -40,7 +46,7 @@ public abstract class OracleRepositoryBase
         if (connection is not DbConnection dbConnection)
         {
             throw new InvalidOperationException(
-                $"Connection must inherit from {nameof(DbConnection)}.");
+                $"The connection must inherit from {nameof(DbConnection)}.");
         }
 
         if (dbConnection.State != ConnectionState.Open)
@@ -64,12 +70,23 @@ public abstract class OracleRepositoryBase
         return oracleConnection;
     }
 
-    protected void DisposeOwnedConnection(IDbConnection connection)
+    protected static string[] GetDistinctParameterNames(
+        DynamicParameters? parameters,
+        params string[] excludedNames)
     {
-        if (!HasExternalTransaction)
+        if (parameters is null)
         {
-            connection.Dispose();
+            return Array.Empty<string>();
         }
+
+        var excluded = new HashSet<string>(
+            excludedNames ?? Array.Empty<string>(),
+            StringComparer.OrdinalIgnoreCase);
+
+        return parameters.ParameterNames
+            .Where(p => !excluded.Contains(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     protected static string BuildOracleArgumentList(IEnumerable<string>? parameterNames)
@@ -98,21 +115,6 @@ public abstract class OracleRepositoryBase
         return names.Length == 0
             ? string.Empty
             : string.Join(", ", names.Select(static p => $"{p} => :{p}"));
-    }
-
-    protected static string[] GetDistinctParameterNames(DynamicParameters? parameters, params string[] excludedNames)
-    {
-        if (parameters is null)
-        {
-            return Array.Empty<string>();
-        }
-
-        var excluded = new HashSet<string>(excludedNames ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-
-        return parameters.ParameterNames
-            .Where(p => !excluded.Contains(p))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
     }
 
     protected static DynamicParameters CloneParameters(DynamicParameters? source)
@@ -144,7 +146,8 @@ public abstract class OracleRepositoryBase
 
         try
         {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
             {
                 await dbConnection.OpenAsync(cancellationToken);
             }
@@ -153,7 +156,7 @@ public abstract class OracleRepositoryBase
                 new CommandDefinition(
                     commandText: sql,
                     parameters: parameters,
-                    transaction: Transaction,
+                    transaction: GetTransaction(),
                     commandType: commandType,
                     cancellationToken: cancellationToken));
         }
@@ -173,7 +176,8 @@ public abstract class OracleRepositoryBase
 
         try
         {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
             {
                 await dbConnection.OpenAsync(cancellationToken);
             }
@@ -182,7 +186,7 @@ public abstract class OracleRepositoryBase
                 new CommandDefinition(
                     commandText: sql,
                     parameters: parameters,
-                    transaction: Transaction,
+                    transaction: GetTransaction(),
                     commandType: commandType,
                     cancellationToken: cancellationToken));
         }
@@ -202,7 +206,8 @@ public abstract class OracleRepositoryBase
 
         try
         {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
             {
                 await dbConnection.OpenAsync(cancellationToken);
             }
@@ -211,80 +216,11 @@ public abstract class OracleRepositoryBase
                 new CommandDefinition(
                     commandText: sql,
                     parameters: parameters,
-                    transaction: Transaction,
+                    transaction: GetTransaction(),
                     commandType: commandType,
                     cancellationToken: cancellationToken));
 
             return result.AsList();
-        }
-        finally
-        {
-            DisposeOwnedConnection(connection);
-        }
-    }
-
-    protected async Task<(IReadOnlyList<T1> Set1, IReadOnlyList<T2> Set2)> QueryMultipleAsync<T1, T2>(
-        string sql,
-        object? parameters = null,
-        CommandType commandType = CommandType.Text,
-        CancellationToken cancellationToken = default)
-    {
-        var connection = GetConnection();
-
-        try
-        {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
-            using var grid = await connection.QueryMultipleAsync(
-                new CommandDefinition(
-                    commandText: sql,
-                    parameters: parameters,
-                    transaction: Transaction,
-                    commandType: commandType,
-                    cancellationToken: cancellationToken));
-
-            var set1 = (await grid.ReadAsync<T1>()).AsList();
-            var set2 = (await grid.ReadAsync<T2>()).AsList();
-
-            return (set1, set2);
-        }
-        finally
-        {
-            DisposeOwnedConnection(connection);
-        }
-    }
-
-    protected async Task<(IReadOnlyList<T1> Set1, IReadOnlyList<T2> Set2, IReadOnlyList<T3> Set3)> QueryMultipleAsync<T1, T2, T3>(
-        string sql,
-        object? parameters = null,
-        CommandType commandType = CommandType.Text,
-        CancellationToken cancellationToken = default)
-    {
-        var connection = GetConnection();
-
-        try
-        {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
-            using var grid = await connection.QueryMultipleAsync(
-                new CommandDefinition(
-                    commandText: sql,
-                    parameters: parameters,
-                    transaction: Transaction,
-                    commandType: commandType,
-                    cancellationToken: cancellationToken));
-
-            var set1 = (await grid.ReadAsync<T1>()).AsList();
-            var set2 = (await grid.ReadAsync<T2>()).AsList();
-            var set3 = (await grid.ReadAsync<T3>()).AsList();
-
-            return (set1, set2, set3);
         }
         finally
         {
@@ -304,7 +240,8 @@ public abstract class OracleRepositoryBase
 
         try
         {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
             {
                 await dbConnection.OpenAsync(cancellationToken);
             }
@@ -313,7 +250,7 @@ public abstract class OracleRepositoryBase
                 new CommandDefinition(
                     commandText: sql,
                     parameters: parameters,
-                    transaction: Transaction,
+                    transaction: GetTransaction(),
                     commandType: commandType,
                     cancellationToken: cancellationToken),
                 map,
@@ -339,7 +276,8 @@ public abstract class OracleRepositoryBase
 
         try
         {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
             {
                 await dbConnection.OpenAsync(cancellationToken);
             }
@@ -348,13 +286,48 @@ public abstract class OracleRepositoryBase
                 new CommandDefinition(
                     commandText: sql,
                     parameters: parameters,
-                    transaction: Transaction,
+                    transaction: GetTransaction(),
                     commandType: commandType,
                     cancellationToken: cancellationToken),
                 map,
                 splitOn);
 
             return result.AsList();
+        }
+        finally
+        {
+            DisposeOwnedConnection(connection);
+        }
+    }
+
+    protected async Task<(IReadOnlyList<T1> Set1, IReadOnlyList<T2> Set2)> QueryMultipleAsync<T1, T2>(
+        string sql,
+        object? parameters = null,
+        CommandType commandType = CommandType.Text,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = GetConnection();
+
+        try
+        {
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
+            {
+                await dbConnection.OpenAsync(cancellationToken);
+            }
+
+            using var grid = await connection.QueryMultipleAsync(
+                new CommandDefinition(
+                    commandText: sql,
+                    parameters: parameters,
+                    transaction: GetTransaction(),
+                    commandType: commandType,
+                    cancellationToken: cancellationToken));
+
+            var set1 = (await grid.ReadAsync<T1>()).AsList();
+            var set2 = (await grid.ReadAsync<T2>()).AsList();
+
+            return (set1, set2);
         }
         finally
         {
@@ -376,7 +349,8 @@ public abstract class OracleRepositoryBase
 
         try
         {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
             {
                 await dbConnection.OpenAsync(cancellationToken);
             }
@@ -385,7 +359,7 @@ public abstract class OracleRepositoryBase
                 new CommandDefinition(
                     commandText: sql,
                     parameters: parameters,
-                    transaction: Transaction,
+                    transaction: GetTransaction(),
                     commandType: commandType,
                     cancellationToken: cancellationToken));
         }
@@ -414,9 +388,39 @@ public abstract class OracleRepositoryBase
             cancellationToken);
     }
 
+    protected async Task<T?> ExecuteScalarAsync<T>(
+        string sql,
+        object? parameters = null,
+        CommandType commandType = CommandType.Text,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = GetConnection();
+
+        try
+        {
+            if (connection is DbConnection dbConnection &&
+                dbConnection.State != ConnectionState.Open)
+            {
+                await dbConnection.OpenAsync(cancellationToken);
+            }
+
+            return await connection.ExecuteScalarAsync<T?>(
+                new CommandDefinition(
+                    commandText: sql,
+                    parameters: parameters,
+                    transaction: GetTransaction(),
+                    commandType: commandType,
+                    cancellationToken: cancellationToken));
+        }
+        finally
+        {
+            DisposeOwnedConnection(connection);
+        }
+    }
+
     #endregion
 
-    #region Stored Procedure Query Helpers
+    #region Stored Procedure Helpers
 
     protected Task<T?> QueryStoredProcedureFirstOrDefaultAsync<T>(
         string procedureName,
@@ -456,7 +460,7 @@ public abstract class OracleRepositoryBase
 
     #endregion
 
-    #region Oracle Scalar Function
+    #region Oracle Function Helpers
 
     protected async Task<T?> ExecuteOracleFunctionAsync<T>(
         string functionName,
@@ -473,39 +477,11 @@ public abstract class OracleRepositoryBase
         return await ExecuteScalarAsync<T>(sql, parameters, CommandType.Text, cancellationToken);
     }
 
-    protected async Task<T?> ExecuteScalarAsync<T>(
-        string sql,
-        object? parameters = null,
-        CommandType commandType = CommandType.Text,
-        CancellationToken cancellationToken = default)
-    {
-        var connection = GetConnection();
-
-        try
-        {
-            if (connection is DbConnection dbConnection && dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
-            return await connection.ExecuteScalarAsync<T?>(
-                new CommandDefinition(
-                    commandText: sql,
-                    parameters: parameters,
-                    transaction: Transaction,
-                    commandType: commandType,
-                    cancellationToken: cancellationToken));
-        }
-        finally
-        {
-            DisposeOwnedConnection(connection);
-        }
-    }
-
-    #endregion
-
-    #region Oracle REF CURSOR Function
-
+    /// <summary>
+    /// Executes an Oracle function returning SYS_REFCURSOR.
+    /// Example:
+    /// BEGIN :result := pkg_users.get_all_users(p_status => :p_status); END;
+    /// </summary>
     protected async Task<IReadOnlyList<T>> ExecuteOracleFunctionWithCursorAsync<T>(
         string functionName,
         DynamicParameters? parameters = null,
@@ -518,7 +494,7 @@ public abstract class OracleRepositoryBase
             await using var command = connection.CreateCommand();
             command.BindByName = true;
             command.CommandType = CommandType.Text;
-            command.Transaction = Transaction as OracleTransaction;
+            command.Transaction = GetTransaction() as OracleTransaction;
 
             var parameterNames = GetDistinctParameterNames(parameters, "result");
             var namedArguments = BuildOracleNamedArgumentList(parameterNames);
@@ -545,7 +521,7 @@ public abstract class OracleRepositoryBase
         catch (Exception ex)
         {
             Logger.LogError(ex,
-                "Error executing Oracle function cursor {FunctionName} with parameters {@Parameters}",
+                "Error executing Oracle function {FunctionName} with REF CURSOR. Parameters: {@Parameters}",
                 functionName, parameters);
             throw;
         }
@@ -555,10 +531,11 @@ public abstract class OracleRepositoryBase
         }
     }
 
-    #endregion
-
-    #region Oracle REF CURSOR Stored Procedure
-
+    /// <summary>
+    /// Executes an Oracle stored procedure with OUT SYS_REFCURSOR.
+    /// Example:
+    /// PROCEDURE get_users(p_status IN NUMBER, p_cursor OUT SYS_REFCURSOR)
+    /// </summary>
     protected async Task<IReadOnlyList<T>> ExecuteOracleStoredProcedureWithCursorAsync<T>(
         string procedureName,
         DynamicParameters? parameters = null,
@@ -573,7 +550,7 @@ public abstract class OracleRepositoryBase
             command.BindByName = true;
             command.CommandType = CommandType.StoredProcedure;
             command.CommandText = procedureName;
-            command.Transaction = Transaction as OracleTransaction;
+            command.Transaction = GetTransaction() as OracleTransaction;
 
             var parameterNames = GetDistinctParameterNames(parameters, cursorParameterName);
             AddOracleInputParameters(command, parameters, parameterNames);
@@ -594,7 +571,7 @@ public abstract class OracleRepositoryBase
         catch (Exception ex)
         {
             Logger.LogError(ex,
-                "Error executing Oracle procedure cursor {ProcedureName} with parameters {@Parameters}",
+                "Error executing Oracle procedure {ProcedureName} with REF CURSOR. Parameters: {@Parameters}",
                 procedureName, parameters);
             throw;
         }
@@ -606,7 +583,7 @@ public abstract class OracleRepositoryBase
 
     #endregion
 
-    #region Oracle Helpers
+    #region Oracle Parameter / Cursor Helpers
 
     protected virtual void AddOracleInputParameters(
         OracleCommand command,
@@ -642,8 +619,7 @@ public abstract class OracleRepositoryBase
             return Array.Empty<T>();
         }
 
-        await using var reader = refCursor.GetDataReader();
-
+        using var reader = refCursor.GetDataReader();
         var parser = reader.GetRowParser<T>();
         var results = new List<T>();
 
@@ -657,7 +633,31 @@ public abstract class OracleRepositoryBase
 
     #endregion
 
-    #region Paging Helpers
+    #region Helper Methods
+
+    protected async Task<bool> ExistsAsync(
+        string tableName,
+        string whereClause,
+        object? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"SELECT COUNT(1) FROM {tableName} WHERE {whereClause}";
+        var count = await ExecuteScalarAsync<int>(sql, parameters, CommandType.Text, cancellationToken);
+        return count > 0;
+    }
+
+    protected async Task<int> GetCountAsync(
+        string tableName,
+        string? whereClause = null,
+        object? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = string.IsNullOrWhiteSpace(whereClause)
+            ? $"SELECT COUNT(*) FROM {tableName}"
+            : $"SELECT COUNT(*) FROM {tableName} WHERE {whereClause}";
+
+        return await ExecuteScalarAsync<int>(sql, parameters, CommandType.Text, cancellationToken);
+    }
 
     protected async Task<IReadOnlyList<T>> QueryPagedAsync<T>(
         string baseSql,
@@ -693,34 +693,6 @@ public abstract class OracleRepositoryBase
         dynamicParameters.Add("pageSize", pageSize);
 
         return await QueryAsync<T>(sql, dynamicParameters, CommandType.Text, cancellationToken);
-    }
-
-    #endregion
-
-    #region Convenience Helpers
-
-    protected async Task<bool> ExistsAsync(
-        string tableName,
-        string whereClause,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        var sql = $"SELECT COUNT(1) FROM {tableName} WHERE {whereClause}";
-        var count = await ExecuteScalarAsync<int>(sql, parameters, CommandType.Text, cancellationToken);
-        return count > 0;
-    }
-
-    protected async Task<int> GetCountAsync(
-        string tableName,
-        string? whereClause = null,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        var sql = string.IsNullOrWhiteSpace(whereClause)
-            ? $"SELECT COUNT(*) FROM {tableName}"
-            : $"SELECT COUNT(*) FROM {tableName} WHERE {whereClause}";
-
-        return await ExecuteScalarAsync<int>(sql, parameters, CommandType.Text, cancellationToken);
     }
 
     #endregion

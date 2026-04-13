@@ -23,7 +23,7 @@ public class CreateUserCommandHandler : IRequestHandler<CreateUserCommand, Guid>
         }
 
         var user = new User(request.Email);
-        _userRepository.Add(user);
+        await _userRepository.AddAsync(user, ct);
 
         return Guid.Parse(user.Id);
     }

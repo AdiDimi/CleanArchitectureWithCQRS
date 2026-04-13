@@ -15,8 +15,8 @@ namespace CleanArchitectureDemo.Application.Interfaces
         Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default);
         Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
         Task<int> GetCountAsync(CancellationToken cancellationToken = default);
-        Task<int> Add(User user);
-        Task<int> Update(User user);
-        Task<int> Delete(User user);
+        Task<int> AddAsync(User user, CancellationToken cancellationToken = default);
+        Task<int> UpdateAsync(User user, CancellationToken cancellationToken = default);
+        Task<int> DeleteAsync(User user, CancellationToken cancellationToken = default);
     }
 }

@@ -26,7 +26,7 @@ namespace CleanArchitectureDemo.Application.Commands.DeleteUser
                 throw new NotFoundException(nameof(User), request.Id);
             }
 
-            _userRepository.Delete(user);
+            await _userRepository.DeleteAsync(user, cancellationToken);
 
             return Unit.Value;
         }
