@@ -1,4 +1,5 @@
 ﻿using CleanArchitectureDemo.Application.Interfaces;
+using CleanArchitectureDemo.Infrastructure.Persistence.Parameters;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Oracle.ManagedDataAccess.Client;
@@ -586,9 +587,9 @@ public abstract class OracleRepositoryBase
     #region Oracle Parameter / Cursor Helpers
 
     protected virtual void AddOracleInputParameters(
-        OracleCommand command,
-        DynamicParameters? parameters,
-        IEnumerable<string> parameterNames)
+     OracleCommand command,
+     DynamicParameters? parameters,
+     IEnumerable<string> parameterNames)
     {
         if (parameters is null)
         {
@@ -599,15 +600,125 @@ public abstract class OracleRepositoryBase
         {
             var value = parameters.Get<object?>(name);
 
-            var parameter = new OracleParameter
+            OracleParameter parameter;
+
+            if (value is OracleParameterSpec spec)
             {
-                ParameterName = name,
-                Value = value ?? DBNull.Value,
-                Direction = ParameterDirection.Input
-            };
+                parameter = CreateOracleParameter(spec);
+            }
+            else
+            {
+                parameter = InferOracleParameter(name, value);
+            }
 
             command.Parameters.Add(parameter);
         }
+    }
+
+    protected virtual OracleParameter CreateOracleParameter(OracleParameterSpec spec)
+    {
+        var parameter = new OracleParameter
+        {
+            ParameterName = spec.Name,
+            Direction = spec.Direction,
+            IsNullable = spec.IsNullable,
+            Value = spec.Value ?? DBNull.Value
+        };
+
+        if (spec.OracleDbType.HasValue)
+        {
+            parameter.OracleDbType = spec.OracleDbType.Value;
+        }
+
+        if (spec.DbType.HasValue)
+        {
+            parameter.DbType = spec.DbType.Value;
+        }
+
+        if (spec.Size.HasValue)
+        {
+            parameter.Size = spec.Size.Value;
+        }
+
+        if (spec.Precision.HasValue)
+        {
+            parameter.Precision = spec.Precision.Value;
+        }
+
+        if (spec.Scale.HasValue)
+        {
+            parameter.Scale = spec.Scale.Value;
+        }
+
+        if (spec.CollectionType.HasValue)
+        {
+            parameter.CollectionType = spec.CollectionType.Value;
+        }
+
+        if (spec.ArrayBindCount.HasValue)
+        {
+            parameter.Size = spec.ArrayBindCount.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(spec.SourceColumn))
+        {
+            parameter.SourceColumn = spec.SourceColumn;
+        }
+
+        return parameter;
+    }
+
+    protected virtual OracleParameter InferOracleParameter(string name, object? value)
+    {
+        var parameter = new OracleParameter
+        {
+            ParameterName = name,
+            Direction = ParameterDirection.Input,
+            Value = value ?? DBNull.Value
+        };
+
+        if (value is null)
+        {
+            return parameter;
+        }
+
+        // Conservative explicit mappings for common trouble spots
+        switch (value)
+        {
+            case string s:
+                parameter.OracleDbType = OracleDbType.Varchar2;
+                parameter.Size = Math.Max(1, s.Length);
+                break;
+
+            case int:
+                parameter.OracleDbType = OracleDbType.Int32;
+                break;
+
+            case long:
+                parameter.OracleDbType = OracleDbType.Int64;
+                break;
+
+            case decimal:
+                parameter.OracleDbType = OracleDbType.Decimal;
+                break;
+
+            case DateTime:
+                parameter.OracleDbType = OracleDbType.TimeStamp;
+                break;
+
+            case byte[] bytes:
+                parameter.OracleDbType = OracleDbType.Raw;
+                parameter.Size = bytes.Length;
+                break;
+
+            case Guid guid:
+                parameter.OracleDbType = OracleDbType.Varchar2;
+                parameter.Value = guid.ToString("D");
+                parameter.Size = 36;
+                break;
+        }
+
+        return parameter;
     }
 
     protected async Task<IReadOnlyList<T>> ReadRefCursorAsync<T>(

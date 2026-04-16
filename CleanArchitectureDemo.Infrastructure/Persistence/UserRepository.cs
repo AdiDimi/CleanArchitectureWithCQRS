@@ -68,9 +68,13 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
         //        cancellationToken);
         //}
 
-        public async Task<IReadOnlyList<User>> GetPagedAsync(int pageNumber=0, int pageSize=10, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<User>> GetPagedAsync(int pageNumber=1, int pageSize=10,
+            CancellationToken cancellationToken = default)
         {
-            var offset = (pageNumber - 1) * pageSize;
+            if (pageNumber < 1) throw new ArgumentOutOfRangeException(nameof(pageNumber));
+            if (pageSize < 1) throw new ArgumentOutOfRangeException(nameof(pageSize));
+
+            var offset = (pageNumber -1) * pageSize;
 
             return await ExecuteOracleFunctionWithCursorAsync<User>(
                 OracleProcedures.GetPagedUsers,
