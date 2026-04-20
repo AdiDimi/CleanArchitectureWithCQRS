@@ -5,6 +5,19 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Parameters;
 
 public static class OracleParameterFactory
 {
+    public static OracleParameterSpec OutNumber(
+    string name,
+    byte precision = 18,
+    byte scale = 0) =>
+    new()
+    {
+        Name = name,
+        OracleDbType = OracleDbType.Decimal,
+        Precision = precision,
+        Scale = scale,
+        Direction = ParameterDirection.Output
+    };
+
     public static OracleParameterSpec Varchar2(
         string name,
         string? value,

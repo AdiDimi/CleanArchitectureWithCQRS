@@ -47,8 +47,18 @@ public sealed class UnitOfWork : IUnitOfWork, IAsyncDisposable
     private async ValueTask Cleanup()
     {
         _session.ClearSession();
-        if (_transaction != null) await _transaction.DisposeAsync();
-        if (_connection != null) await _connection.DisposeAsync();
+
+        if (_transaction != null)
+        {
+            await _transaction.DisposeAsync();
+            _transaction = null;
+        }
+
+        if (_connection != null)
+        {
+            await _connection.DisposeAsync();
+            _connection = null;
+        }
     }
 
     public async ValueTask DisposeAsync() => await Cleanup();

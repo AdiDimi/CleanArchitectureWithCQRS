@@ -1,5 +1,7 @@
 using CleanArchitectureDemo.Application.Interfaces;
 using CleanArchitectureDemo.Infrastructure.Persistence;
+using CleanArchitectureDemo.Infrastructure.Persistence.TypeHandlers;
+using Dapper;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,6 +24,9 @@ namespace CleanArchitectureDemo.Infrastructure
             services.AddScoped<IDbSessionAccessor, DbSessionAccessor>();
             // Unit of Work
             services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+            SqlMapper.AddTypeHandler(new OracleDecimalToIntHandler());
+            SqlMapper.AddTypeHandler(new OracleDecimalToNullableIntHandler());
 
             // Repositories
             services.AddScoped<IUserRepository, UserRepository>(); // Concrete for UnitOfWork injection

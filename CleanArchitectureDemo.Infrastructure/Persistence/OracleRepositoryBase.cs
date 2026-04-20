@@ -1,4 +1,5 @@
-﻿using CleanArchitectureDemo.Application.Interfaces;
+﻿using CleanArchitectureDemo.Application.DTOs;
+using CleanArchitectureDemo.Application.Interfaces;
 using CleanArchitectureDemo.Infrastructure.Persistence.Parameters;
 using Dapper;
 using Microsoft.Extensions.Logging;
@@ -537,29 +538,42 @@ public abstract class OracleRepositoryBase
     /// Example:
     /// PROCEDURE get_users(p_status IN NUMBER, p_cursor OUT SYS_REFCURSOR)
     /// </summary>
-    protected async Task<IReadOnlyList<T>> ExecuteOracleStoredProcedureWithCursorAsync<T>(
-        string procedureName,
-        DynamicParameters? parameters = null,
-        string cursorParameterName = "p_cursor",
-        CancellationToken cancellationToken = default)
+    protected async Task<(IReadOnlyList<T> Data, Dictionary<string, object?> OutParams)>
+  ExecuteOracleStoredProcedureWithCursorAsync<T>(
+      string procedureName,
+      DynamicParameters? parameters = null,
+      IEnumerable<OracleParameterSpec>? outParameters = null,
+      string cursorParameterName = "p_cursor",
+      CancellationToken cancellationToken = default)
     {
         var connection = await GetOpenOracleConnectionAsync(cancellationToken);
 
         try
         {
             await using var command = connection.CreateCommand();
+
             command.BindByName = true;
             command.CommandType = CommandType.StoredProcedure;
             command.CommandText = procedureName;
-            command.Transaction = GetTransaction() as OracleTransaction;
+            command.Transaction = GetTransaction() as Oracle.ManagedDataAccess.Client.OracleTransaction;
 
             var parameterNames = GetDistinctParameterNames(parameters, cursorParameterName);
+
             AddOracleInputParameters(command, parameters, parameterNames);
 
-            var cursorParameter = new OracleParameter
+            if (outParameters is not null)
+            {
+                foreach (var spec in outParameters)
+                {
+                    var param = CreateOracleParameter(spec);
+                    command.Parameters.Add(param);
+                }
+            }
+
+            var cursorParameter = new Oracle.ManagedDataAccess.Client.OracleParameter
             {
                 ParameterName = cursorParameterName,
-                OracleDbType = OracleDbType.RefCursor,
+                OracleDbType = Oracle.ManagedDataAccess.Client.OracleDbType.RefCursor,
                 Direction = ParameterDirection.Output
             };
 
@@ -567,14 +581,22 @@ public abstract class OracleRepositoryBase
 
             await command.ExecuteNonQueryAsync(cancellationToken);
 
-            return await ReadRefCursorAsync<T>(cursorParameter, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex,
-                "Error executing Oracle procedure {ProcedureName} with REF CURSOR. Parameters: {@Parameters}",
-                procedureName, parameters);
-            throw;
+            var data = await ReadRefCursorAsync<T>(cursorParameter, cancellationToken);
+
+            var outValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (Oracle.ManagedDataAccess.Client.OracleParameter param in command.Parameters)
+            {
+                if ((param.Direction == ParameterDirection.Output ||
+                     param.Direction == ParameterDirection.InputOutput) &&
+                    param.OracleDbType != Oracle.ManagedDataAccess.Client.OracleDbType.RefCursor)
+                {
+                    outValues[param.ParameterName] =
+                        param.Value == DBNull.Value ? null : param.Value;
+                }
+            }
+
+            return (data, outValues);
         }
         finally
         {
@@ -582,10 +604,112 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    protected async Task<PagedResult<T>> ExecutePagedProcedureAsync<T>(
+    string procedureName,
+    int pageNumber,
+    int pageSize,
+    DynamicParameters? parameters = null,
+    string totalCountParameterName = "o_total_count",
+    string cursorParameterName = "p_cursor",
+    CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageNumber), "Page number must be >= 1.");
+        }
+
+        if (pageSize < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pageSize), "Page size must be >= 1.");
+        }
+
+        var execParameters = parameters is null
+            ? new DynamicParameters()
+            : new DynamicParameters(parameters);
+
+        var outParameters = new[]
+        {
+        OracleParameterFactory.OutNumber(totalCountParameterName)
+    };
+
+        var (data, outValues) = await ExecuteOracleStoredProcedureWithCursorAsync<T>(
+            procedureName,
+            execParameters,
+            outParameters,
+            cursorParameterName,
+            cancellationToken);
+
+        var totalCount = GetRequiredOutInt32(outValues, totalCountParameterName);
+
+        return new PagedResult<T>
+        {
+            Items = data,
+            TotalCount = totalCount,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+    }
+
     #endregion
 
     #region Oracle Parameter / Cursor Helpers
 
+  
+
+    protected static int GetRequiredOutInt32(
+    IReadOnlyDictionary<string, object?> outValues,
+    string parameterName)
+    {
+        if (!outValues.TryGetValue(parameterName, out var value) || value is null)
+        {
+            throw new InvalidOperationException(
+                $"Required OUT parameter '{parameterName}' was not returned.");
+        }
+
+        return value switch
+        {
+            int i => i,
+            long l => checked((int)l),
+            OracleDecimal od => od.ToInt32(),
+            Decimal d => Decimal.ToInt32(d),
+            short s => s,
+            byte b => b,
+            _ => Convert.ToInt32(value)
+        };
+    }
+
+    protected static int? GetOptionalOutInt32(
+        IReadOnlyDictionary<string, object?> outValues,
+        string parameterName)
+    {
+        if (!outValues.TryGetValue(parameterName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            int i => i,
+            long l => checked((int)l),
+            OracleDecimal od => od.ToInt32(),
+            decimal d => decimal.ToInt32(d),
+            short s => s,
+            byte b => b,
+            _ => Convert.ToInt32(value)
+        };
+    }
+
+    protected static string? GetOptionalOutString(
+        IReadOnlyDictionary<string, object?> outValues,
+        string parameterName)
+    {
+        if (!outValues.TryGetValue(parameterName, out var value) || value is null)
+        {
+            return null;
+        }
+
+        return Convert.ToString(value);
+    }
     protected virtual void AddOracleInputParameters(
      OracleCommand command,
      DynamicParameters? parameters,

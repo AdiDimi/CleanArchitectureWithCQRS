@@ -1,3 +1,4 @@
+using CleanArchitectureDemo.Application.DTOs;
 using CleanArchitectureDemo.Application.Interfaces;
 using CleanArchitectureDemo.Domain.Entities;
 using CleanArchitectureDemo.Infrastructure.Persistence.Constants;
@@ -10,6 +11,7 @@ using System.Data;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace CleanArchitectureDemo.Infrastructure.Persistence
 {
@@ -34,11 +36,12 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
                 cancellationToken);
         }
 
-        public Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default)
         {
-            return ExecuteOracleStoredProcedureWithCursorAsync<User>(
+            var(data, outValues) =  await ExecuteOracleStoredProcedureWithCursorAsync<User>(
                 "PKG_USERS.GET_ALL",
                 cancellationToken: cancellationToken);
+            return data;
         }
 
         public Task<int> AddAsync(User user, CancellationToken cancellationToken = default)
@@ -68,18 +71,31 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
         //        cancellationToken);
         //}
 
-        public async Task<IReadOnlyList<User>> GetPagedAsync(int pageNumber=1, int pageSize=10,
+        public async Task<PagedResult<UserDto>> GetPagedAsync(int pageNumber=1, int pageSize=10,
             CancellationToken cancellationToken = default)
         {
-            if (pageNumber < 1) throw new ArgumentOutOfRangeException(nameof(pageNumber));
-            if (pageSize < 1) throw new ArgumentOutOfRangeException(nameof(pageSize));
+            //if (pageNumber < 1) throw new ArgumentOutOfRangeException(nameof(pageNumber));
+            //if (pageSize < 1) throw new ArgumentOutOfRangeException(nameof(pageSize));
 
-            var offset = (pageNumber -1) * pageSize;
+            var offset = (pageNumber - 1) * pageSize;
+            var parameters = UserParameters.GetPagedUsers(offset, pageSize);
+            return await ExecutePagedProcedureAsync<UserDto>(
+                                       procedureName: "PKG_USERS.GET_PAGED",
+                                       pageNumber: pageNumber,
+                                       pageSize: pageSize,
+                                       parameters: parameters,
+                                       totalCountParameterName: "o_total_count",
+                                       cursorParameterName: "p_cursor",
+                                       cancellationToken: cancellationToken);
 
-            return await ExecuteOracleFunctionWithCursorAsync<User>(
-                OracleProcedures.GetPagedUsers,
-                UserParameters.GetPagedUsers(offset, pageSize),
-                cancellationToken);
+            //return await ExecuteOracleStoredProcedureWithCursorAsync<User>(
+            //   "PKG_USERS.get_paged",
+            //   UserParameters.GetPagedUsers(offset, pageSize),
+            //   cancellationToken: cancellationToken);
+            //return await ExecuteOracleFunctionWithCursorAsync<User>(
+            //    OracleProcedures.GetPagedUsers,
+            //    UserParameters.GetPagedUsers(offset, pageSize),
+            //    cancellationToken);
         }
 
         public async Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default)

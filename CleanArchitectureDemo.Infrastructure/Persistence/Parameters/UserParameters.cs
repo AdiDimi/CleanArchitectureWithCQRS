@@ -1,6 +1,8 @@
+using Dapper;
+using Oracle.ManagedDataAccess.Client;
 using System;
 using System.Collections.Generic;
-using Dapper;
+using System.Data;
 
 namespace CleanArchitectureDemo.Infrastructure.Persistence.Parameters
 {
@@ -40,8 +42,22 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Parameters
         public static DynamicParameters GetUserById(string id) =>
             Create(("p_id", id));
 
-        public static DynamicParameters GetPagedUsers(int offset, int pageSize) =>
-            Create(("p_offset", offset), ("p_page_size", pageSize));
+        public static DynamicParameters GetPagedUsers(int offset, int pageSize){
+            var parameters = new DynamicParameters();
+
+            parameters.Add("p_offset", offset);
+            parameters.Add("p_page_size", pageSize);
+
+            //Create(("p_offset", offset), ("p_page_size", pageSize));
+            //var cursorParameter = new OracleParameter
+            //{
+            //    ParameterName = "o_total_count",
+            //    OracleDbType = OracleDbType.Int32,
+            //    Direction = ParameterDirection.Output
+            //};
+            //parameters.Add("o_total_count", cursorParameter);
+            return parameters;
+        }
 
         public static DynamicParameters UpdateUser(string id, string email) =>
             Create(("p_id", id), ("p_email", email));
