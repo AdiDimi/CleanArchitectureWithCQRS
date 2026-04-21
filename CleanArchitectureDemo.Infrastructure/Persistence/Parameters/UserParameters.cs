@@ -1,3 +1,4 @@
+using CleanArchitectureDemo.Domain.Entities;
 using Dapper;
 using Oracle.ManagedDataAccess.Client;
 using System;
@@ -12,20 +13,12 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Parameters
     /// </summary>
     public static class UserParameters
     {
-        public static DynamicParameters GetUserByEmail(string email)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_email", OracleParameterFactory.Varchar2("p_email", email, 320));
-            return parameters;
-        }
+        public static DynamicParameters GetUserByEmail(string email) => Create(("p_email", email));
 
-        public static DynamicParameters InsertUser(string id, string email)
-        {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", OracleParameterFactory.Varchar2("p_id", id, 50));
-            parameters.Add("p_email", OracleParameterFactory.Varchar2("p_email", email, 320));
-            return parameters;
-        }
+     
+        public static DynamicParameters InsertUser(string id, string email, int userId, string userName) =>
+            Create(("p_id", id), ("p_email", email), ("p_user_id", userId), ("p_user_name", userName));
+    
 
         public static DynamicParameters UpsertAudit(
             string userId,
@@ -42,23 +35,9 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Parameters
         public static DynamicParameters GetUserById(string id) =>
             Create(("p_id", id));
 
-        public static DynamicParameters GetPagedUsers(int offset, int pageSize){
-            var parameters = new DynamicParameters();
-
-            parameters.Add("p_offset", offset);
-            parameters.Add("p_page_size", pageSize);
-
-            //Create(("p_offset", offset), ("p_page_size", pageSize));
-            //var cursorParameter = new OracleParameter
-            //{
-            //    ParameterName = "o_total_count",
-            //    OracleDbType = OracleDbType.Int32,
-            //    Direction = ParameterDirection.Output
-            //};
-            //parameters.Add("o_total_count", cursorParameter);
-            return parameters;
-        }
-
+        public static DynamicParameters GetPagedUsers(int offset, int pageSize) =>
+            Create(("p_offset", offset), ("p_page_size", pageSize));
+     
         public static DynamicParameters UpdateUser(string id, string email) =>
             Create(("p_id", id), ("p_email", email));
 

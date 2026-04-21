@@ -27,18 +27,18 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Constants
     public static class OracleProcedures
     {
         // User functions (queries)
-        public const string GetUserById = "FN_GET_USER_BY_ID";
-        public const string GetUserByEmail = "FN_GET_USER_BY_EMAIL";
-        public const string GetAllUsers = "FN_GET_ALL_USERS";
-        public const string GetPagedUsers = "FN_GET_PAGED_USERS";
-        public const string UserExists = "FN_USER_EXISTS";
-        public const string EmailExists = "FN_EMAIL_EXISTS";
-        public const string GetUserCount = "FN_GET_USER_COUNT";
+        public const string GetUserById = "PKG_USERS.GET_BY_ID";
+        public const string GetUserByEmail = "PKG_USERS.GET_BY_EMAIL";
+        public const string GetAllUsers = "PKG_USERS.GET_ALL";
+        public const string GetPagedUsers = "PKG_USERS.GET_PAGED";
+        public const string UserExists = "PKG_USERS.USER_EXISTS";
+        public const string EmailExists = "PKG_USERS.EMAIL_EXISTS";
+        public const string GetUserCount = "PKG_USERS.GET_USER_COUNT";
 
         // User procedures (commands)
-        public const string InsertUser = "SP_INSERT_USER";
-        public const string UpdateUser = "SP_UPDATE_USER";
-        public const string DeleteUser = "SP_DELETE_USER";
+        public const string InsertUser = "PKG_USERS.INSERT_USER";
+        public const string UpdateUser = "PKG_USERS.UPDATE_USER";
+        public const string DeleteUser = "PKG_USERS.DELETE_USER";
     }
 
  

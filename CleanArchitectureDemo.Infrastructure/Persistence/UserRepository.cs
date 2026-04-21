@@ -27,57 +27,45 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
 
         public async Task<User?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
         {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", id);
-
-            return await QueryStoredProcedureFirstOrDefaultAsync<User>(
-                "PKG_USERS.GET_BY_ID",
-                parameters,
-                cancellationToken);
+            var (data, outValues) = await ExecuteOracleStoredProcedureWithCursorAsync<User>(
+                OracleProcedures.GetUserById,
+                UserParameters.GetUserById(id),
+                cancellationToken: cancellationToken);
+            return data.SingleOrDefault();
         }
 
         public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default)
         {
             var(data, outValues) =  await ExecuteOracleStoredProcedureWithCursorAsync<User>(
-                "PKG_USERS.GET_ALL",
+                OracleProcedures.GetAllUsers,
                 cancellationToken: cancellationToken);
             return data;
         }
 
         public Task<int> AddAsync(User user, CancellationToken cancellationToken = default)
         {
-            var parameters = new DynamicParameters();
-            parameters.Add("p_id", user.Id);
-            parameters.Add("p_email", user.Email);
-            parameters.Add("p_user_id", user.USER_ID);
-            parameters.Add("p_user_name", user.USER_NAME);
-
-            return ExecuteStoredProcedureAsync(
-                "PKG_USERS.INSERT_USER",
-                parameters,
+   
+           return ExecuteStoredProcedureAsync(
+                OracleProcedures.InsertUser,
+                UserParameters.InsertUser(user.Id, user.Email, user.USER_ID, user.USER_NAME),
                 cancellationToken);
         }
         public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
         {
-            return await QueryStoredProcedureFirstOrDefaultAsync<User>(
+            var (data, outValues) = await ExecuteOracleStoredProcedureWithCursorAsync<User>(
                 OracleProcedures.GetUserByEmail,
                 UserParameters.GetUserByEmail(email),
-                cancellationToken);
+                cancellationToken: cancellationToken);
+            return data.SingleOrDefault();
+
         }
 
-        //public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default)
-        //{
-        //    return await ExecuteOracleFunctionWithCursorAsync<User>(
-        //        OracleProcedures.GetAllUsers,
-        //        parameters: null,
-        //        cancellationToken);
-        //}
-
+   
         public async Task<PagedResult<UserDto>> GetPagedAsync(int pageNumber=1, int pageSize=10,
             CancellationToken cancellationToken = default)
         {
-            //if (pageNumber < 1) throw new ArgumentOutOfRangeException(nameof(pageNumber));
-            //if (pageSize < 1) throw new ArgumentOutOfRangeException(nameof(pageSize));
+            if (pageNumber < 1) throw new ArgumentOutOfRangeException(nameof(pageNumber));
+            if (pageSize < 1) throw new ArgumentOutOfRangeException(nameof(pageSize));
 
             var offset = (pageNumber - 1) * pageSize;
             var parameters = UserParameters.GetPagedUsers(offset, pageSize);
@@ -90,14 +78,6 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
                                        cursorParameterName: "p_cursor",
                                        cancellationToken: cancellationToken);
 
-            //return await ExecuteOracleStoredProcedureWithCursorAsync<User>(
-            //   "PKG_USERS.get_paged",
-            //   UserParameters.GetPagedUsers(offset, pageSize),
-            //   cancellationToken: cancellationToken);
-            //return await ExecuteOracleFunctionWithCursorAsync<User>(
-            //    OracleProcedures.GetPagedUsers,
-            //    UserParameters.GetPagedUsers(offset, pageSize),
-            //    cancellationToken);
         }
 
         public async Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default)
@@ -126,19 +106,6 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
                 OracleProcedures.GetUserCount,
                 cancellationToken: cancellationToken);
         }
-
-        //public async Task<int> AddAsync(User user, CancellationToken cancellationToken = default)
-        //{
-        //    Logger.LogInformation("Adding user with ID: {UserId}, Email: {Email}", user.Id, user.Email);
-
-        //    var result =  await ExecuteStoredProcedureAsync(
-        //        OracleProcedures.InsertUser,
-        //        UserParameters.InsertUser(user.Id, user.Email),
-        //        cancellationToken);
-
-        //    Logger.LogInformation("Successfully added user with ID: {UserId}", user.Id);
-        //    return result;
-        //}
 
         public async Task<int> UpdateAsync(User user, CancellationToken cancellationToken = default)
         {

@@ -8,7 +8,6 @@ using Oracle.ManagedDataAccess.Types;
 using System.Data;
 using System.Data.Common;
 
-
 public abstract class OracleRepositoryBase
 {
     protected readonly IDbConnectionFactory ConnectionFactory;
@@ -25,14 +24,29 @@ public abstract class OracleRepositoryBase
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Gets whether the repository is currently using a shared connection/transaction
+    /// provided by the active Unit of Work session.
+    /// </summary>
     protected bool HasSharedSession => DbSessionAccessor.HasActiveTransaction;
 
+    /// <summary>
+    /// Returns the current shared connection when a Unit of Work session is active,
+    /// otherwise creates a new owned connection.
+    /// </summary>
     protected IDbConnection GetConnection()
         => DbSessionAccessor.Connection ?? ConnectionFactory.CreateConnection();
 
+    /// <summary>
+    /// Returns the current shared transaction, or null when no transaction is active.
+    /// </summary>
     protected IDbTransaction? GetTransaction()
         => DbSessionAccessor.Transaction;
 
+    /// <summary>
+    /// Disposes the connection only when it is owned by the repository.
+    /// Shared Unit of Work connections must not be disposed here.
+    /// </summary>
     protected void DisposeOwnedConnection(IDbConnection connection)
     {
         if (!HasSharedSession)
@@ -41,6 +55,10 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Opens and returns the current connection as a DbConnection.
+    /// Throws when the underlying connection does not support async operations.
+    /// </summary>
     protected async Task<DbConnection> GetOpenDbConnectionAsync(CancellationToken cancellationToken)
     {
         var connection = GetConnection();
@@ -59,6 +77,10 @@ public abstract class OracleRepositoryBase
         return dbConnection;
     }
 
+    /// <summary>
+    /// Opens and returns the current connection as an OracleConnection.
+    /// Throws when the configured connection is not Oracle.
+    /// </summary>
     protected async Task<OracleConnection> GetOpenOracleConnectionAsync(CancellationToken cancellationToken)
     {
         var dbConnection = await GetOpenDbConnectionAsync(cancellationToken);
@@ -72,6 +94,10 @@ public abstract class OracleRepositoryBase
         return oracleConnection;
     }
 
+    /// <summary>
+    /// Returns distinct DynamicParameters names excluding the specified names.
+    /// Useful for filtering cursor or output parameter names out of input parameter lists.
+    /// </summary>
     protected static string[] GetDistinctParameterNames(
         DynamicParameters? parameters,
         params string[] excludedNames)
@@ -91,6 +117,10 @@ public abstract class OracleRepositoryBase
             .ToArray();
     }
 
+    /// <summary>
+    /// Builds an Oracle positional argument list such as ":p_id, :p_name".
+    /// Used for scalar Oracle function calls.
+    /// </summary>
     protected static string BuildOracleArgumentList(IEnumerable<string>? parameterNames)
     {
         if (parameterNames is null)
@@ -105,6 +135,10 @@ public abstract class OracleRepositoryBase
             : string.Join(", ", names.Select(static p => $":{p}"));
     }
 
+    /// <summary>
+    /// Builds an Oracle named argument list such as "p_id => :p_id".
+    /// This is safer than positional binding in PL/SQL blocks.
+    /// </summary>
     protected static string BuildOracleNamedArgumentList(IEnumerable<string>? parameterNames)
     {
         if (parameterNames is null)
@@ -119,41 +153,22 @@ public abstract class OracleRepositoryBase
             : string.Join(", ", names.Select(static p => $"{p} => :{p}"));
     }
 
-    protected static DynamicParameters CloneParameters(DynamicParameters? source)
-    {
-        var clone = new DynamicParameters();
-
-        if (source is null)
-        {
-            return clone;
-        }
-
-        foreach (var name in source.ParameterNames.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            clone.Add(name, source.Get<object?>(name));
-        }
-
-        return clone;
-    }
-
     #region Query Methods
 
+    /// <summary>
+    /// Executes a query and returns the first row or default.
+    /// Uses the shared transaction when one is active.
+    /// </summary>
     protected async Task<T?> QueryFirstOrDefaultAsync<T>(
         string sql,
         object? parameters = null,
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             return await connection.QueryFirstOrDefaultAsync<T>(
                 new CommandDefinition(
                     commandText: sql,
@@ -168,22 +183,20 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Executes a query and returns a single row or default.
+    /// Throws if more than one row is returned.
+    /// </summary>
     protected async Task<T?> QuerySingleOrDefaultAsync<T>(
         string sql,
         object? parameters = null,
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             return await connection.QuerySingleOrDefaultAsync<T>(
                 new CommandDefinition(
                     commandText: sql,
@@ -198,22 +211,19 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Executes a query and returns all mapped rows.
+    /// </summary>
     protected async Task<IReadOnlyList<T>> QueryAsync<T>(
         string sql,
         object? parameters = null,
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             var result = await connection.QueryAsync<T>(
                 new CommandDefinition(
                     commandText: sql,
@@ -230,6 +240,10 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Executes a Dapper two-type multi-mapping query.
+    /// splitOn must be the first column name of the second mapped type in the SQL projection.
+    /// </summary>
     protected async Task<IReadOnlyList<TReturn>> QueryAsync<T1, T2, TReturn>(
         string sql,
         Func<T1, T2, TReturn> map,
@@ -238,16 +252,10 @@ public abstract class OracleRepositoryBase
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             var result = await connection.QueryAsync(
                 new CommandDefinition(
                     commandText: sql,
@@ -266,6 +274,10 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Executes a Dapper three-type multi-mapping query.
+    /// splitOn must match the SQL projection order.
+    /// </summary>
     protected async Task<IReadOnlyList<TReturn>> QueryAsync<T1, T2, T3, TReturn>(
         string sql,
         Func<T1, T2, T3, TReturn> map,
@@ -274,16 +286,10 @@ public abstract class OracleRepositoryBase
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             var result = await connection.QueryAsync(
                 new CommandDefinition(
                     commandText: sql,
@@ -302,22 +308,20 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Executes a multi-result SQL batch and returns two typed result sets.
+    /// Keep this only for direct SQL multi-result scenarios.
+    /// </summary>
     protected async Task<(IReadOnlyList<T1> Set1, IReadOnlyList<T2> Set2)> QueryMultipleAsync<T1, T2>(
         string sql,
         object? parameters = null,
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             using var grid = await connection.QueryMultipleAsync(
                 new CommandDefinition(
                     commandText: sql,
@@ -341,22 +345,20 @@ public abstract class OracleRepositoryBase
 
     #region Command Methods
 
+    /// <summary>
+    /// Executes a non-query command and returns the affected row count.
+    /// Logs failures with SQL and command type context.
+    /// </summary>
     protected async Task<int> ExecuteAsync(
         string sql,
         object? parameters = null,
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             return await connection.ExecuteAsync(
                 new CommandDefinition(
                     commandText: sql,
@@ -378,6 +380,10 @@ public abstract class OracleRepositoryBase
         }
     }
 
+    /// <summary>
+    /// Executes a stored procedure command and returns affected rows.
+    /// Intended for insert, update, delete, and command-style procedures.
+    /// </summary>
     protected Task<int> ExecuteStoredProcedureAsync(
         string procedureName,
         object? parameters = null,
@@ -390,22 +396,20 @@ public abstract class OracleRepositoryBase
             cancellationToken);
     }
 
+    /// <summary>
+    /// Executes a scalar query and returns a single value.
+    /// Useful for count, existence, and lookup queries.
+    /// </summary>
     protected async Task<T?> ExecuteScalarAsync<T>(
         string sql,
         object? parameters = null,
         CommandType commandType = CommandType.Text,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetConnection();
+        var connection = await GetOpenDbConnectionAsync(cancellationToken);
 
         try
         {
-            if (connection is DbConnection dbConnection &&
-                dbConnection.State != ConnectionState.Open)
-            {
-                await dbConnection.OpenAsync(cancellationToken);
-            }
-
             return await connection.ExecuteScalarAsync<T?>(
                 new CommandDefinition(
                     commandText: sql,
@@ -422,48 +426,12 @@ public abstract class OracleRepositoryBase
 
     #endregion
 
-    #region Stored Procedure Helpers
-
-    protected Task<T?> QueryStoredProcedureFirstOrDefaultAsync<T>(
-        string procedureName,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        return QueryFirstOrDefaultAsync<T>(
-            procedureName,
-            parameters,
-            CommandType.StoredProcedure,
-            cancellationToken);
-    }
-
-    protected Task<T?> QueryStoredProcedureSingleOrDefaultAsync<T>(
-        string procedureName,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        return QuerySingleOrDefaultAsync<T>(
-            procedureName,
-            parameters,
-            CommandType.StoredProcedure,
-            cancellationToken);
-    }
-
-    protected Task<IReadOnlyList<T>> QueryStoredProcedureAsync<T>(
-        string procedureName,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        return QueryAsync<T>(
-            procedureName,
-            parameters,
-            CommandType.StoredProcedure,
-            cancellationToken);
-    }
-
-    #endregion
-
     #region Oracle Function Helpers
 
+    /// <summary>
+    /// Executes an Oracle scalar function using SELECT ... FROM DUAL.
+    /// Suitable for scalar return values only.
+    /// </summary>
     protected async Task<T?> ExecuteOracleFunctionAsync<T>(
         string functionName,
         DynamicParameters? parameters = null,
@@ -480,10 +448,13 @@ public abstract class OracleRepositoryBase
     }
 
     /// <summary>
-    /// Executes an Oracle function returning SYS_REFCURSOR.
-    /// Example:
-    /// BEGIN :result := pkg_users.get_all_users(p_status => :p_status); END;
+    /// Executes an Oracle function that returns SYS_REFCURSOR.
+    /// Uses a PL/SQL block with a REF CURSOR return value.
     /// </summary>
+    /// <remarks>
+    /// Dapper Oracle type handlers should be registered at startup for reliable conversion
+    /// of provider-specific values such as OracleDecimal, OracleDate, and OracleTimeStamp.
+    /// </remarks>
     protected async Task<IReadOnlyList<T>> ExecuteOracleFunctionWithCursorAsync<T>(
         string functionName,
         DynamicParameters? parameters = null,
@@ -505,19 +476,18 @@ public abstract class OracleRepositoryBase
                 ? $"BEGIN :result := {functionName}; END;"
                 : $"BEGIN :result := {functionName}({namedArguments}); END;";
 
-            AddOracleInputParameters(command, parameters, parameterNames);
+            AddOracleParameters(command, parameters, parameterNames);
 
-            var resultParameter = new OracleParameter
+            command.Parameters.Add(new OracleParameter
             {
                 ParameterName = "result",
                 OracleDbType = OracleDbType.RefCursor,
                 Direction = ParameterDirection.ReturnValue
-            };
-
-            command.Parameters.Add(resultParameter);
+            });
 
             await command.ExecuteNonQueryAsync(cancellationToken);
 
+            var resultParameter = (OracleParameter)command.Parameters["result"];
             return await ReadRefCursorAsync<T>(resultParameter, cancellationToken);
         }
         catch (Exception ex)
@@ -534,62 +504,57 @@ public abstract class OracleRepositoryBase
     }
 
     /// <summary>
-    /// Executes an Oracle stored procedure with OUT SYS_REFCURSOR.
-    /// Example:
-    /// PROCEDURE get_users(p_status IN NUMBER, p_cursor OUT SYS_REFCURSOR)
+    /// Executes an Oracle stored procedure with an OUT SYS_REFCURSOR parameter
+    /// and optional additional OUT parameters.
     /// </summary>
     protected async Task<(IReadOnlyList<T> Data, Dictionary<string, object?> OutParams)>
-  ExecuteOracleStoredProcedureWithCursorAsync<T>(
-      string procedureName,
-      DynamicParameters? parameters = null,
-      IEnumerable<OracleParameterSpec>? outParameters = null,
-      string cursorParameterName = "p_cursor",
-      CancellationToken cancellationToken = default)
+        ExecuteOracleStoredProcedureWithCursorAsync<T>(
+            string procedureName,
+            DynamicParameters? parameters = null,
+            IEnumerable<OracleParameterSpec>? outParameters = null,
+            string cursorParameterName = "p_cursor",
+            CancellationToken cancellationToken = default)
     {
         var connection = await GetOpenOracleConnectionAsync(cancellationToken);
 
         try
         {
             await using var command = connection.CreateCommand();
-
             command.BindByName = true;
             command.CommandType = CommandType.StoredProcedure;
             command.CommandText = procedureName;
-            command.Transaction = GetTransaction() as Oracle.ManagedDataAccess.Client.OracleTransaction;
+            command.Transaction = GetTransaction() as OracleTransaction;
 
             var parameterNames = GetDistinctParameterNames(parameters, cursorParameterName);
-
-            AddOracleInputParameters(command, parameters, parameterNames);
+            AddOracleParameters(command, parameters, parameterNames);
 
             if (outParameters is not null)
             {
                 foreach (var spec in outParameters)
                 {
-                    var param = CreateOracleParameter(spec);
-                    command.Parameters.Add(param);
+                    command.Parameters.Add(CreateOracleParameter(spec));
                 }
             }
 
-            var cursorParameter = new Oracle.ManagedDataAccess.Client.OracleParameter
+            command.Parameters.Add(new OracleParameter
             {
                 ParameterName = cursorParameterName,
-                OracleDbType = Oracle.ManagedDataAccess.Client.OracleDbType.RefCursor,
+                OracleDbType = OracleDbType.RefCursor,
                 Direction = ParameterDirection.Output
-            };
-
-            command.Parameters.Add(cursorParameter);
+            });
 
             await command.ExecuteNonQueryAsync(cancellationToken);
 
+            var cursorParameter = (OracleParameter)command.Parameters[cursorParameterName];
             var data = await ReadRefCursorAsync<T>(cursorParameter, cancellationToken);
 
             var outValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (Oracle.ManagedDataAccess.Client.OracleParameter param in command.Parameters)
+            foreach (OracleParameter param in command.Parameters)
             {
                 if ((param.Direction == ParameterDirection.Output ||
                      param.Direction == ParameterDirection.InputOutput) &&
-                    param.OracleDbType != Oracle.ManagedDataAccess.Client.OracleDbType.RefCursor)
+                    param.OracleDbType != OracleDbType.RefCursor)
                 {
                     outValues[param.ParameterName] =
                         param.Value == DBNull.Value ? null : param.Value;
@@ -598,20 +563,30 @@ public abstract class OracleRepositoryBase
 
             return (data, outValues);
         }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "Error executing Oracle procedure {ProcedureName} with REF CURSOR. Parameters: {@Parameters}",
+                procedureName, parameters);
+            throw;
+        }
         finally
         {
             DisposeOwnedConnection(connection);
         }
     }
 
+    /// <summary>
+    /// Executes a paging stored procedure that returns both a REF CURSOR and an OUT total count.
+    /// </summary>
     protected async Task<PagedResult<T>> ExecutePagedProcedureAsync<T>(
-    string procedureName,
-    int pageNumber,
-    int pageSize,
-    DynamicParameters? parameters = null,
-    string totalCountParameterName = "o_total_count",
-    string cursorParameterName = "p_cursor",
-    CancellationToken cancellationToken = default)
+        string procedureName,
+        int pageNumber,
+        int pageSize,
+        DynamicParameters? parameters = null,
+        string totalCountParameterName = "o_total_count",
+        string cursorParameterName = "p_cursor",
+        CancellationToken cancellationToken = default)
     {
         if (pageNumber < 1)
         {
@@ -629,8 +604,8 @@ public abstract class OracleRepositoryBase
 
         var outParameters = new[]
         {
-        OracleParameterFactory.OutNumber(totalCountParameterName)
-    };
+            OracleParameterFactory.OutNumber(totalCountParameterName)
+        };
 
         var (data, outValues) = await ExecuteOracleStoredProcedureWithCursorAsync<T>(
             procedureName,
@@ -654,11 +629,13 @@ public abstract class OracleRepositoryBase
 
     #region Oracle Parameter / Cursor Helpers
 
-  
-
+    /// <summary>
+    /// Returns a required OUT parameter as Int32.
+    /// Supports OracleDecimal and common numeric CLR types.
+    /// </summary>
     protected static int GetRequiredOutInt32(
-    IReadOnlyDictionary<string, object?> outValues,
-    string parameterName)
+        IReadOnlyDictionary<string, object?> outValues,
+        string parameterName)
     {
         if (!outValues.TryGetValue(parameterName, out var value) || value is null)
         {
@@ -671,13 +648,16 @@ public abstract class OracleRepositoryBase
             int i => i,
             long l => checked((int)l),
             OracleDecimal od => od.ToInt32(),
-            Decimal d => Decimal.ToInt32(d),
+            decimal d => decimal.ToInt32(d),
             short s => s,
             byte b => b,
             _ => Convert.ToInt32(value)
         };
     }
 
+    /// <summary>
+    /// Returns an optional OUT parameter as Int32 when present.
+    /// </summary>
     protected static int? GetOptionalOutInt32(
         IReadOnlyDictionary<string, object?> outValues,
         string parameterName)
@@ -699,6 +679,9 @@ public abstract class OracleRepositoryBase
         };
     }
 
+    /// <summary>
+    /// Returns an optional OUT parameter as string when present.
+    /// </summary>
     protected static string? GetOptionalOutString(
         IReadOnlyDictionary<string, object?> outValues,
         string parameterName)
@@ -710,10 +693,15 @@ public abstract class OracleRepositoryBase
 
         return Convert.ToString(value);
     }
-    protected virtual void AddOracleInputParameters(
-     OracleCommand command,
-     DynamicParameters? parameters,
-     IEnumerable<string> parameterNames)
+
+    /// <summary>
+    /// Adds Oracle parameters from the supplied DynamicParameters collection.
+    /// Supports both OracleParameterSpec and inferred OracleParameter creation.
+    /// </summary>
+    protected virtual void AddOracleParameters(
+        OracleCommand command,
+        DynamicParameters? parameters,
+        IEnumerable<string> parameterNames)
     {
         if (parameters is null)
         {
@@ -724,21 +712,18 @@ public abstract class OracleRepositoryBase
         {
             var value = parameters.Get<object?>(name);
 
-            OracleParameter parameter;
-
-            if (value is OracleParameterSpec spec)
-            {
-                parameter = CreateOracleParameter(spec);
-            }
-            else
-            {
-                parameter = InferOracleParameter(name, value);
-            }
+            OracleParameter parameter = value is OracleParameterSpec spec
+                ? CreateOracleParameter(spec)
+                : InferOracleParameter(name, value);
 
             command.Parameters.Add(parameter);
         }
     }
 
+    /// <summary>
+    /// Creates a strongly typed OracleParameter from an OracleParameterSpec.
+    /// Use this for explicit OracleDbType, size, precision, scale, and output parameters.
+    /// </summary>
     protected virtual OracleParameter CreateOracleParameter(OracleParameterSpec spec)
     {
         var parameter = new OracleParameter
@@ -792,6 +777,10 @@ public abstract class OracleRepositoryBase
         return parameter;
     }
 
+    /// <summary>
+    /// Creates an OracleParameter by inferring the Oracle type from the CLR value.
+    /// This is intended for common simple input parameters only.
+    /// </summary>
     protected virtual OracleParameter InferOracleParameter(string name, object? value)
     {
         var parameter = new OracleParameter
@@ -806,7 +795,6 @@ public abstract class OracleRepositoryBase
             return parameter;
         }
 
-        // Conservative explicit mappings for common trouble spots
         switch (value)
         {
             case string s:
@@ -845,6 +833,13 @@ public abstract class OracleRepositoryBase
         return parameter;
     }
 
+    /// <summary>
+    /// Reads rows from an Oracle REF CURSOR and maps them to the target type.
+    /// </summary>
+    /// <remarks>
+    /// This method relies on Dapper row parsing. Oracle-specific provider values such as
+    /// OracleDecimal should be supported through registered Dapper type handlers.
+    /// </remarks>
     protected async Task<IReadOnlyList<T>> ReadRefCursorAsync<T>(
         OracleParameter cursorParameter,
         CancellationToken cancellationToken)
@@ -868,32 +863,12 @@ public abstract class OracleRepositoryBase
 
     #endregion
 
-    #region Helper Methods
+    #region Convenience Helpers
 
-    protected async Task<bool> ExistsAsync(
-        string tableName,
-        string whereClause,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        var sql = $"SELECT COUNT(1) FROM {tableName} WHERE {whereClause}";
-        var count = await ExecuteScalarAsync<int>(sql, parameters, CommandType.Text, cancellationToken);
-        return count > 0;
-    }
-
-    protected async Task<int> GetCountAsync(
-        string tableName,
-        string? whereClause = null,
-        object? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        var sql = string.IsNullOrWhiteSpace(whereClause)
-            ? $"SELECT COUNT(*) FROM {tableName}"
-            : $"SELECT COUNT(*) FROM {tableName} WHERE {whereClause}";
-
-        return await ExecuteScalarAsync<int>(sql, parameters, CommandType.Text, cancellationToken);
-    }
-
+    /// <summary>
+    /// Executes a paged direct SQL query using OFFSET/FETCH.
+    /// Keep this only when direct SQL paging is still needed in repositories.
+    /// </summary>
     protected async Task<IReadOnlyList<T>> QueryPagedAsync<T>(
         string baseSql,
         string orderByClause,
