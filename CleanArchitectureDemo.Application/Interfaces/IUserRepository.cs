@@ -1,3 +1,4 @@
+using CleanArchitectureDemo.Application.DTOs;
 using CleanArchitectureDemo.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -11,7 +12,7 @@ namespace CleanArchitectureDemo.Application.Interfaces
         Task<User?> GetByIdAsync(string id, CancellationToken cancellationToken = default);
         Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken = default);
-        Task<IReadOnlyList<User>> GetPagedAsync(int pageNumber, int pageSize, CancellationToken cancellationToken = default);
+        Task<PagedResult<UserDto>> GetPagedAsync(int pageNumber, int pageSize, CancellationToken cancellationToken = default);
         Task<bool> ExistsAsync(string id, CancellationToken cancellationToken = default);
         Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
         Task<int> GetCountAsync(CancellationToken cancellationToken = default);

@@ -33,6 +33,7 @@ namespace CleanArchitectureDemo.Application.Commands.UpdateUser
                 throw new ConflictException("User", request.Email);
             }
 
+            user.Email = request.Email;
             // Note: You would need to add an Update method to the User entity
             // For now, this demonstrates the repository pattern
             // In a real scenario, User entity should have domain methods to update its properties

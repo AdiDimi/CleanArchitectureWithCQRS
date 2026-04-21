@@ -5,7 +5,7 @@ using MediatR;
 
 namespace CleanArchitectureDemo.Application.Commands.CreateUser;
 
-public class CreateUserCommandHandler : IRequestHandler<CreateUserCommand, Guid>
+public class CreateUserCommandHandler : IRequestHandler<CreateUserCommand, string>
 {
     private readonly IUserRepository _userRepository;
 
@@ -14,18 +14,18 @@ public class CreateUserCommandHandler : IRequestHandler<CreateUserCommand, Guid>
         _userRepository = userRepository;
     }
 
-    public async Task<Guid> Handle(CreateUserCommand request, CancellationToken ct)
+    public async Task<string> Handle(CreateUserCommand request, CancellationToken ct)
     {
         // Check if user with email already exists
-        if (await _userRepository.EmailExistsAsync(request.Email, ct))
+        if (await _userRepository.EmailExistsAsync(request.user.Email, ct))
         {
-            throw new ConflictException("User", request.Email);
+            throw new ConflictException("User", request.user.Email);
         }
 
-        var user = new User(request.Email);
+        var user = request.user;
         await _userRepository.AddAsync(user, ct);
 
-        return Guid.Parse(user.Id);
+        return user.Id;
     }
 }
 

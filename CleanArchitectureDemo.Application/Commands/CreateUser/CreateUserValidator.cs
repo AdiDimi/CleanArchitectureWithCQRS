@@ -9,7 +9,7 @@ public class CreateUserValidator : AbstractValidator<CreateUserCommand>
 {
     public CreateUserValidator()
     {
-        RuleFor(x => x.Email)
+        RuleFor(x => x.user.Email)
             .NotEmpty()
             .EmailAddress();
     }

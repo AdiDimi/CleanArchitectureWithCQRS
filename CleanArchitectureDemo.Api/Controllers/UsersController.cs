@@ -1,6 +1,7 @@
 ﻿using CleanArchitectureDemo.Application.Commands.CreateUser;
 using CleanArchitectureDemo.Application.Queries.GetAllUsers;
 using CleanArchitectureDemo.Application.Queries.GetUserById;
+using CleanArchitectureDemo.Domain.Entities;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +21,7 @@ namespace CleanArchitectureDemo.Api.Controllers
 
         [HttpGet]
         [ProducesResponseType(typeof(GetAllUsersResponse), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetAll([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
+        public async Task<ActionResult<GetAllUsersResponse>> GetAll([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
         {
             var response = await _mediator.Send(new GetAllUsersQuery(pageNumber, pageSize), cancellationToken);
             return Ok(response);
@@ -29,11 +30,20 @@ namespace CleanArchitectureDemo.Api.Controllers
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> Get(string id, CancellationToken cancellationToken = default)
+        public async Task<ActionResult<User>> Get(string id, CancellationToken cancellationToken = default)
         {
             var user = await _mediator.Send(new GetUserByIdQuery(id), cancellationToken);
             return Ok(user);
         }
+
+        //[HttpGet("{email}")]
+        //[ProducesResponseType(StatusCodes.Status200OK)]
+        //[ProducesResponseType(StatusCodes.Status404NotFound)]
+        //public async Task<IActionResult> GetByEmail(string email, CancellationToken cancellationToken = default)
+        //{
+        //    var user = await _mediator.Send(new GetUserByEmailQuery(email), cancellationToken);
+        //    return Ok(user);
+        //}
 
         [HttpPost]
         [ProducesResponseType(StatusCodes.Status201Created)]
@@ -69,5 +79,7 @@ namespace CleanArchitectureDemo.Api.Controllers
             await _mediator.Send(new Application.Commands.DeleteUser.DeleteUserCommand(id), cancellationToken);
             return NoContent();
         }
+
+ 
     }
 }

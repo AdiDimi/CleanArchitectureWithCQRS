@@ -24,10 +24,10 @@ namespace CleanArchitectureDemo.Application.Queries.GetAllUsers
                 request.PageSize, 
                 cancellationToken);
 
-            var totalCount = await _userRepository.GetCountAsync(cancellationToken);
+            var totalCount = users.TotalCount;
             var totalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize);
 
-            var userDtos = users.Select(u => new UserDto(u.Id , u.Email,u.USER_ID,u.USER_NAME)).ToList();
+            var userDtos = users.Items.Select(u => new UserDto(u.Id , u.Email,u.USER_ID,u.USER_NAME)).ToList();
 
             return new GetAllUsersResponse(
                 userDtos,

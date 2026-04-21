@@ -4,4 +4,4 @@ using MediatR;
 
 namespace CleanArchitectureDemo.Application.Commands.CreateUser;
 
-public record CreateUserCommand(string Email) : IRequest<Guid>, ITransactionalCommand;
+public record CreateUserCommand(User user) : IRequest<string>, ITransactionalCommand;
