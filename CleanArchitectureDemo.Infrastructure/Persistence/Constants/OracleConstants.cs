@@ -40,4 +40,6 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence.Constants
         public const string UpdateUser = "SP_UPDATE_USER";
         public const string DeleteUser = "SP_DELETE_USER";
     }
+
+ 
 }

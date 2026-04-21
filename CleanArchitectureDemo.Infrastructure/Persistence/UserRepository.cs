@@ -49,6 +49,8 @@ namespace CleanArchitectureDemo.Infrastructure.Persistence
             var parameters = new DynamicParameters();
             parameters.Add("p_id", user.Id);
             parameters.Add("p_email", user.Email);
+            parameters.Add("p_user_id", user.USER_ID);
+            parameters.Add("p_user_name", user.USER_NAME);
 
             return ExecuteStoredProcedureAsync(
                 "PKG_USERS.INSERT_USER",
